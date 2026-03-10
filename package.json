@@ -1,0 +1,17 @@
+{
+  "name": "codex-wt",
+  "version": "0.1.0",
+  "description": "Launch Codex inside an isolated git worktree.",
+  "type": "module",
+  "packageManager": "bun@1.3.1",
+  "bin": {
+    "codex-wt": "./bin/codex-wt.js"
+  },
+  "scripts": {
+    "test": "bun test"
+  },
+  "engines": {
+    "node": ">=20",
+    "bun": ">=1.0.0"
+  }
+}
