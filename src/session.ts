@@ -79,19 +79,53 @@ async function git(cwd: string, ...args: string[]): Promise<CommandResult> {
   return await run("git", args, { cwd });
 }
 
+function isAllowedBranchChar(char: string): boolean {
+  return /[a-z0-9._-]/.test(char);
+}
+
+function trimBoundaryChars(value: string): string {
+  let start = 0;
+  let end = value.length;
+
+  while (start < end && (value[start] === "-" || value[start] === "/")) {
+    start += 1;
+  }
+
+  while (end > start && (value[end - 1] === "-" || value[end - 1] === "/")) {
+    end -= 1;
+  }
+
+  return value.slice(start, end);
+}
+
 export function sanitizeBranchSegment(value: string): string {
-  return (
-    value
-      .toLowerCase()
-      .replace(/[^a-z0-9._/-]+/g, "-")
-      .replace(/\/+/g, "/")
-      .replace(/^-+|-+$/g, "")
-      .replace(/^\/+|\/+$/g, "") || "session"
-  );
+  let normalized = "";
+
+  for (const rawChar of value.toLowerCase()) {
+    if (rawChar === "/") {
+      if (!normalized.endsWith("/")) {
+        normalized += rawChar;
+      }
+      continue;
+    }
+
+    if (isAllowedBranchChar(rawChar)) {
+      normalized += rawChar;
+      continue;
+    }
+
+    if (!normalized.endsWith("-")) {
+      normalized += "-";
+    }
+  }
+
+  const trimmed = trimBoundaryChars(normalized);
+
+  return trimmed || "session";
 }
 
 export function buildSessionName(prefix = "pairmind"): string {
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const stamp = new Date().toISOString().replaceAll(/[:.]/g, "-");
   const host = sanitizeBranchSegment(os.hostname().split(".")[0] ?? "host");
   return `${prefix}-${stamp}-${String(process.pid)}-${host}`;
 }

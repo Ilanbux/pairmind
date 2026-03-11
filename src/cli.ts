@@ -1,6 +1,12 @@
 import path from "node:path";
 import process from "node:process";
-import { getProvider, isProviderName, listProviders, type ProviderName } from "./providers.ts";
+import {
+  getProvider,
+  isProviderName,
+  listProviders,
+  type ProviderDefinition,
+  type ProviderName,
+} from "./providers.ts";
 import {
   cleanupSessionIfPristine,
   createWorktreeSession,
@@ -108,103 +114,217 @@ Examples:
 `;
 }
 
-export function parseArgs(argv: string[]): CliOptions {
-  const args = [...argv];
-  const options: CliOptions = {
+function createDefaultOptions(): CliOptions {
+  return {
     branchPrefix: "pairmind",
     help: false,
     keep: false,
     providerArgs: [],
     repo: process.cwd(),
   };
+}
 
+function isHelpFlag(arg: string): boolean {
+  return arg === "-h" || arg === "--help";
+}
+
+function getRequiredValue(args: string[], index: number, flag: string): string {
+  const value = args[index + 1];
+  if (!value) {
+    throw new Error(`Missing value for ${flag}`);
+  }
+
+  return value;
+}
+
+function consumeExplicitProvider(
+  args: string[],
+  index: number,
+  options: CliOptions,
+): number {
+  const provider = getRequiredValue(args, index, "--provider");
+  if (!isProviderName(provider)) {
+    throw new Error(`Unknown provider: ${provider}`);
+  }
+
+  options.provider = provider;
+  return index + 2;
+}
+
+function consumeSessionOption(
+  args: string[],
+  index: number,
+  options: CliOptions,
+  flag: "--base-dir" | "--branch-prefix" | "--name" | "--repo",
+): number {
+  const value = getRequiredValue(args, index, flag);
+
+  switch (flag) {
+    case "--repo":
+      options.repo = path.resolve(value);
+      break;
+    case "--base-dir":
+      options.baseDir = path.resolve(value);
+      break;
+    case "--branch-prefix":
+      options.branchPrefix = value;
+      break;
+    case "--name":
+      options.name = value;
+      break;
+  }
+
+  return index + 2;
+}
+
+function isSessionOptionFlag(
+  arg: string,
+): arg is "--base-dir" | "--branch-prefix" | "--name" | "--repo" {
+  return arg === "--repo" || arg === "--base-dir" || arg === "--branch-prefix" || arg === "--name";
+}
+
+function handleUnknownProviderArg(
+  args: string[],
+  index: number,
+  options: CliOptions,
+): number {
+  const arg = args[index];
+  if (!arg || options.provider || arg.startsWith("-")) {
+    options.providerArgs = args.slice(index);
+    return args.length;
+  }
+
+  options.parseError = `Unknown provider: ${arg}`;
+  options.providerArgs = args.slice(index + 1);
+  return args.length;
+}
+
+function consumeLeadingCommand(args: string[]): void {
   if (args[0] === "run") {
     args.shift();
   }
+}
 
+function consumeLeadingProvider(args: string[], options: CliOptions): void {
   const firstArg = args.at(0);
   if (firstArg && isProviderName(firstArg)) {
     options.provider = firstArg;
     args.shift();
   }
+}
 
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (!arg) {
-      continue;
-    }
+function consumeArg(args: string[], index: number, options: CliOptions): number {
+  const arg = args[index];
+  if (!arg) {
+    return index + 1;
+  }
 
-    if (arg === "--") {
-      options.providerArgs = args.slice(index + 1);
-      break;
-    }
+  if (arg === "--") {
+    options.providerArgs = args.slice(index + 1);
+    return args.length;
+  }
 
-    if (arg === "-h" || arg === "--help") {
-      options.help = true;
-      continue;
-    }
+  if (isHelpFlag(arg)) {
+    options.help = true;
+    return index + 1;
+  }
 
-    if (arg === "--keep") {
-      options.keep = true;
-      continue;
-    }
+  if (arg === "--keep") {
+    options.keep = true;
+    return index + 1;
+  }
 
-    if (arg === "--provider") {
-      const next = args[index + 1];
-      if (!next) {
-        throw new Error("Missing value for --provider");
-      }
+  if (arg === "--provider") {
+    return consumeExplicitProvider(args, index, options);
+  }
 
-      if (!isProviderName(next)) {
-        throw new Error(`Unknown provider: ${next}`);
-      }
+  if (isSessionOptionFlag(arg)) {
+    return consumeSessionOption(args, index, options, arg);
+  }
 
-      options.provider = next;
-      index += 1;
-      continue;
-    }
+  if (!options.provider && isProviderName(arg)) {
+    options.provider = arg;
+    return index + 1;
+  }
 
-    if (arg === "--repo" || arg === "--base-dir" || arg === "--branch-prefix" || arg === "--name") {
-      const next = args[index + 1];
-      if (!next) {
-        throw new Error(`Missing value for ${arg}`);
-      }
+  return handleUnknownProviderArg(args, index, options);
+}
 
-      switch (arg) {
-        case "--repo":
-          options.repo = path.resolve(next);
-          break;
-        case "--base-dir":
-          options.baseDir = path.resolve(next);
-          break;
-        case "--branch-prefix":
-          options.branchPrefix = next;
-          break;
-        case "--name":
-          options.name = next;
-          break;
-      }
+export function parseArgs(argv: string[]): CliOptions {
+  const args = [...argv];
+  const options = createDefaultOptions();
 
-      index += 1;
-      continue;
-    }
+  consumeLeadingCommand(args);
+  consumeLeadingProvider(args, options);
 
-    if (!options.provider && isProviderName(arg)) {
-      options.provider = arg;
-      continue;
-    }
-
-    if (!options.provider && !arg.startsWith("-")) {
-      options.parseError = `Unknown provider: ${arg}`;
-      options.providerArgs = args.slice(index + 1);
-      break;
-    }
-
-    options.providerArgs = args.slice(index);
-    break;
+  let index = 0;
+  while (index < args.length) {
+    index = consumeArg(args, index, options);
   }
 
   return options;
+}
+
+function getProviderOrThrow(
+  options: CliOptions,
+  deps: CliDeps,
+  output: CliOutput,
+): ProviderDefinition {
+  if (options.parseError) {
+    throw new Error(options.parseError);
+  }
+
+  if (!options.provider) {
+    output.stdout(formatHelp(deps.listProviders()));
+    throw new Error("Missing provider. Use 'codex' or 'claude'.");
+  }
+
+  const provider = deps.getProvider(options.provider);
+  if (!provider) {
+    throw new Error(`Unknown provider: ${options.provider}`);
+  }
+
+  return provider;
+}
+
+async function createSession(
+  options: CliOptions,
+  deps: CliDeps,
+): Promise<WorktreeSession> {
+  const repoRoot = await deps.findRepoRoot(options.repo);
+
+  return await deps.createWorktreeSession({
+    repoRoot,
+    branchPrefix: options.branchPrefix,
+    ...(options.baseDir ? { baseDir: options.baseDir } : {}),
+    ...(options.name ? { name: options.name } : {}),
+  });
+}
+
+function reportSessionStart(
+  output: CliOutput,
+  session: WorktreeSession,
+  provider: ProviderDefinition,
+): void {
+  output.stderr(`provider: ${provider.label}`);
+  output.stderr(`worktree: ${session.worktreePath}`);
+  output.stderr(`branch:   ${session.branchName}`);
+}
+
+async function cleanupAfterRun(
+  options: CliOptions,
+  deps: CliDeps,
+  output: CliOutput,
+  session: WorktreeSession,
+): Promise<void> {
+  if (options.keep) {
+    return;
+  }
+
+  const removed = await deps.cleanupSessionIfPristine(session);
+  if (!removed) {
+    output.stderr("Kept worktree because it contains changes or new commits.");
+  }
 }
 
 export async function runCli(
@@ -222,32 +342,9 @@ export async function runCli(
       return { code: 0, kind: "exit" };
     }
 
-    if (options.parseError) {
-      throw new Error(options.parseError);
-    }
-
-    if (!options.provider) {
-      output.stdout(formatHelp(deps.listProviders()));
-      throw new Error("Missing provider. Use 'codex' or 'claude'.");
-    }
-
-    const provider = deps.getProvider(options.provider);
-    if (!provider) {
-      throw new Error(`Unknown provider: ${options.provider}`);
-    }
-
-    const repoRoot = await deps.findRepoRoot(options.repo);
-    const sessionOptions = {
-      repoRoot,
-      branchPrefix: options.branchPrefix,
-      ...(options.baseDir ? { baseDir: options.baseDir } : {}),
-      ...(options.name ? { name: options.name } : {}),
-    };
-    session = await deps.createWorktreeSession(sessionOptions);
-
-    output.stderr(`provider: ${provider.label}`);
-    output.stderr(`worktree: ${session.worktreePath}`);
-    output.stderr(`branch:   ${session.branchName}`);
+    const provider = getProviderOrThrow(options, deps, output);
+    session = await createSession(options, deps);
+    reportSessionStart(output, session, provider);
 
     const result = await deps.runProviderInWorktree(
       session,
@@ -255,12 +352,7 @@ export async function runCli(
       options.providerArgs,
     );
 
-    if (!options.keep) {
-      const removed = await deps.cleanupSessionIfPristine(session);
-      if (!removed) {
-        output.stderr("Kept worktree because it contains changes or new commits.");
-      }
-    }
+    await cleanupAfterRun(options, deps, output, session);
 
     if (result.signal) {
       return { kind: "signal", signal: result.signal };

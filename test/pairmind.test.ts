@@ -78,7 +78,7 @@ void test("formatHelp includes the supported providers", () => {
 
   assert.match(help, /Pairmind/);
   assert.match(help, /claude Claude Code/);
-  assert.match(help, /codex  OpenAI Codex/);
+  assert.match(help, /codex {2}OpenAI Codex/);
 });
 
 void test("resolveWorktreeParent defaults next to the repo", () => {
