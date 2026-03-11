@@ -207,6 +207,7 @@ Common mistake:
 ## Known traps
 
 - `git worktree remove` is safe only for untouched sessions. Dirty or divergent sessions must remain on disk.
+- By default, Pairmind creates worktrees inside the target repo under `.pairmind-worktrees/` and adds that directory to `.git/info/exclude` so the primary repo stays clean.
 - A clean working tree is not enough for auto-cleanup if the user created commits in the session.
 - Tests that create temporary repos must configure a local Git user before committing.
 - On macOS, temporary paths may appear as both `/var/...` and `/private/var/...`; path comparisons in tests should normalize via `realpath`.

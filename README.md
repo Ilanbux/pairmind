@@ -12,7 +12,8 @@ L'idée n'est pas seulement d'encapsuler un outil. Le but est de te donner un es
 - supprime automatiquement le worktree s'il n'y a ni changements ni commits à garder
 - conserve le worktree s'il contient du vrai travail
 
-Par défaut, les worktrees sont créés à côté du repo dans `.pairmind-worktrees/<nom-du-repo>/`.
+Par défaut, les worktrees sont créés dans le repo courant, sous `.pairmind-worktrees/`.
+Pairmind ajoute automatiquement ce dossier à `.git/info/exclude` pour éviter de salir le `git status` du repo principal.
 
 ## Installation locale
 

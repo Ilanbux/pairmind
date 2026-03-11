@@ -31,6 +31,8 @@ interface LaunchResult {
   signal: NodeJS.Signals | null;
 }
 
+const INTERNAL_WORKTREE_DIR = ".pairmind-worktrees";
+
 async function run(
   command: string,
   args: string[],
@@ -77,6 +79,31 @@ async function run(
 
 async function git(cwd: string, ...args: string[]): Promise<CommandResult> {
   return await run("git", args, { cwd });
+}
+
+async function getGitPath(repoRoot: string, gitPath: string): Promise<string> {
+  const { stdout } = await git(repoRoot, "rev-parse", "--git-path", gitPath);
+  return path.resolve(repoRoot, stdout);
+}
+
+function ensureTrailingNewline(value: string): string {
+  return value.endsWith("\n") ? value : `${value}\n`;
+}
+
+async function ensureWorktreeDirExcluded(repoRoot: string): Promise<void> {
+  const excludePath = await getGitPath(repoRoot, "info/exclude");
+  const entry = `${INTERNAL_WORKTREE_DIR}/`;
+  const contents = fs.existsSync(excludePath)
+    ? fs.readFileSync(excludePath, "utf8")
+    : "";
+  const lines = contents.split(/\r?\n/).map((line) => line.trim());
+
+  if (lines.includes(entry)) {
+    return;
+  }
+
+  const prefix = contents.length > 0 ? ensureTrailingNewline(contents) : "";
+  fs.writeFileSync(excludePath, `${prefix}${entry}\n`);
 }
 
 function isAllowedBranchChar(char: string): boolean {
@@ -138,8 +165,7 @@ export function resolveWorktreeParent(
     return path.resolve(overrideDir);
   }
 
-  const repoName = path.basename(repoRoot);
-  return path.join(path.dirname(repoRoot), ".pairmind-worktrees", repoName);
+  return path.join(repoRoot, INTERNAL_WORKTREE_DIR);
 }
 
 export async function findRepoRoot(startDir = process.cwd()): Promise<string> {
@@ -171,6 +197,10 @@ export async function createWorktreeSession({
   const branchName = `${sanitizeBranchSegment(branchPrefix)}/${baseBranch}/${sessionName}`;
   const worktreeParent = resolveWorktreeParent(repoRoot, baseDir);
   const worktreePath = path.join(worktreeParent, sessionName);
+
+  if (!baseDir) {
+    await ensureWorktreeDirExcluded(repoRoot);
+  }
 
   fs.mkdirSync(worktreeParent, { recursive: true });
   await git(repoRoot, "worktree", "add", "-b", branchName, worktreePath, baseCommit);

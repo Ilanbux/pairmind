@@ -81,11 +81,11 @@ void test("formatHelp includes the supported providers", () => {
   assert.match(help, /codex {2}OpenAI Codex/);
 });
 
-void test("resolveWorktreeParent defaults next to the repo", () => {
+void test("resolveWorktreeParent defaults inside the repo", () => {
   const repoRoot = "/tmp/example/repo";
   assert.equal(
     resolveWorktreeParent(repoRoot),
-    "/tmp/example/.pairmind-worktrees/repo",
+    "/tmp/example/repo/.pairmind-worktrees",
   );
 });
 
@@ -494,6 +494,19 @@ void test("createWorktreeSession and cleanupSessionIfPristine remove untouched w
 
   assert.equal(removed, true);
   assert.equal(fs.existsSync(session.worktreePath), false);
+});
+
+void test("createWorktreeSession keeps the main repo clean when using the default internal directory", async () => {
+  const repoRoot = createRepo();
+  const session = await createWorktreeSession({ repoRoot });
+  const excludePath = path.join(
+    repoRoot,
+    git(repoRoot, "rev-parse", "--git-path", "info/exclude"),
+  );
+
+  assert.equal(session.worktreeParent, path.join(repoRoot, ".pairmind-worktrees"));
+  assert.equal(git(repoRoot, "status", "--porcelain"), "");
+  assert.match(fs.readFileSync(excludePath, "utf8"), /(^|\n)\.pairmind-worktrees\/\n/);
 });
 
 void test("cleanupSessionIfPristine keeps dirty worktrees", async () => {
